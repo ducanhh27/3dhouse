@@ -145,7 +145,7 @@
     <div id="interaction-toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none transition-all duration-300 opacity-90">
         <div class="glass-panel rounded-full px-4 py-1.5 text-xs text-slate-200 flex items-center gap-2 shadow-lg">
             <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-            <span id="toast-text">Tip: Click directly on the sliding Shoji doors or stone lanterns in 3D, or use the dock below</span>
+            <span id="toast-text">Tip: Click directly on the TV, sliding Shoji doors, or stone lanterns in 3D, or use the dock below</span>
         </div>
     </div>
 
@@ -183,8 +183,8 @@
     </div>
 
     <!-- Bottom Floating Control Dock -->
-    <footer class="fixed bottom-5 left-1/2 -translate-x-1/2 z-10 w-[95%] max-w-2xl pointer-events-none">
-        <div class="glass-panel rounded-2xl p-2 sm:p-2.5 pointer-events-auto grid grid-cols-2 sm:grid-cols-4 gap-2">
+    <footer class="fixed bottom-5 left-1/2 -translate-x-1/2 z-10 w-[96%] max-w-4xl pointer-events-none">
+        <div class="glass-panel rounded-2xl p-2 sm:p-2.5 pointer-events-auto grid grid-cols-2 sm:grid-cols-5 gap-2">
             
             <!-- 1. Day / Night Switch -->
             <button id="btn-time" class="ctrl-btn rounded-xl px-3.5 py-2.5 bg-white/10 border border-white/15 flex items-center justify-center gap-2.5 text-left">
@@ -230,8 +230,21 @@
                 </div>
             </button>
 
-            <!-- 4. Switch Orbit / First-Person Mode -->
-            <button id="btn-camera-mode" class="ctrl-btn rounded-xl px-3.5 py-2.5 bg-white/10 border border-white/15 flex items-center justify-center gap-2.5 text-left">
+            <!-- 4. Turn TV On / Off -->
+            <button id="btn-tv" class="ctrl-btn rounded-xl px-3.5 py-2.5 bg-white/10 border border-white/15 flex items-center justify-center gap-2.5 text-left">
+                <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <div class="leading-tight">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400">Tatami TV</div>
+                    <div id="label-tv" class="text-xs sm:text-sm font-semibold text-white">TV Off</div>
+                </div>
+            </button>
+
+            <!-- 5. Switch Orbit / First-Person Mode -->
+            <button id="btn-camera-mode" class="ctrl-btn col-span-2 sm:col-span-1 rounded-xl px-3.5 py-2.5 bg-white/10 border border-white/15 flex items-center justify-center gap-2.5 text-left">
                 <div class="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-300 flex items-center justify-center shrink-0">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -257,6 +270,7 @@
             lightsOn: false,
             doorsOpen: false,
             doorSlideProgress: 0,  // 0 = Closed, 1 = Open
+            tvOn: false,           // Television ON / OFF state
             cameraMode: 'orbit',   // 'orbit' | 'fp'
             audioEnabled: false,
             time: 0
@@ -265,6 +279,7 @@
         // Collections for animated & interactive elements
         const interactiveDoors = [];
         const interactiveLanterns = [];
+        const interactiveTV = [];
         const lanternLights = [];
         const lanternEmissives = [];
         const koiList = [];
@@ -274,7 +289,8 @@
 
         // Scene globals
         let scene, camera, renderer, clock;
-        let ambientLight, hemiLight, sunMoonLight, interiorWarmLight, tokonomaLight, pondGlowLight;
+        let ambientLight, hemiLight, sunMoonLight, interiorWarmLight, tokonomaLight, pondGlowLight, tvLight;
+        let tvCanvas, tvCtx, tvTexture, tvScreenMat, tvLedMat;
         let skyMat, starsPoints, firefliesPoints, sunMoonMesh;
         let pondWaterMesh, shishiOdoshiTube;
 
@@ -600,6 +616,11 @@
             pondGlowLight = new THREE.PointLight(0x38bdf8, 0, 12, 2.0);
             pondGlowLight.position.set(5.5, 0.8, 3.8);
             scene.add(pondGlowLight);
+
+            // Television screen dynamic room glow light inside Tatami room
+            tvLight = new THREE.PointLight(0x60a5fa, 0, 8.5, 1.6);
+            tvLight.position.set(-0.1, 1.95, -4.2);
+            scene.add(tvLight);
         }
 
         function createSkyAndAtmosphere() {
@@ -1174,6 +1195,230 @@
             akariShade.scale.set(1, 0.82, 1);
             akariShade.position.set(0.4, 3.35, -0.2);
             houseGroup.add(akariShade);
+
+            // 8. INTERACTIVE TELEVISION (TV) ON LOW WOODEN CABINET IN TATAMI ROOM
+            const tvGroup = new THREE.Group();
+            // Placed at back-right of Tatami room, angled gently toward the Chabudai tea table & entrance
+            tvGroup.position.set(2.35, 0.94, -2.35);
+            tvGroup.rotation.y = -0.28;
+
+            // Low traditional wooden TV cabinet (TV-dai)
+            const cabinetTop = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.06, 0.56), darkCedarMat);
+            cabinetTop.position.y = 0.42;
+            cabinetTop.castShadow = true;
+            cabinetTop.receiveShadow = true;
+            tvGroup.add(cabinetTop);
+
+            const cabinetBottom = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.05, 0.52), darkCedarMat);
+            cabinetBottom.position.y = 0.12;
+            tvGroup.add(cabinetBottom);
+
+            // Cabinet side walls & center divider with slatted wooden doors
+            [-0.82, 0, 0.82].forEach(cx => {
+                const panel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.30, 0.50), darkCedarMat);
+                panel.position.set(cx, 0.27, 0);
+                tvGroup.add(panel);
+            });
+            [-0.78, 0.78].forEach(lx => {
+                [-0.21, 0.21].forEach(lz => {
+                    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.06), darkCedarMat);
+                    foot.position.set(lx, 0.06, lz);
+                    tvGroup.add(foot);
+                });
+            });
+
+            // Slatted front wooden drawer fronts on TV stand
+            const slatFront = new THREE.Mesh(new THREE.BoxGeometry(1.60, 0.24, 0.04), naturalBeamMat);
+            slatFront.position.set(0, 0.27, 0.24);
+            tvGroup.add(slatFront);
+
+            // Sleek Widescreen TV Stand Base & Neck
+            const tvMetalMat = new THREE.MeshStandardMaterial({
+                color: 0x18181b,
+                roughness: 0.35,
+                metalness: 0.6
+            });
+            const tvBasePlate = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.025, 0.28), tvMetalMat);
+            tvBasePlate.position.set(0, 0.465, 0.02);
+            tvGroup.add(tvBasePlate);
+
+            const tvNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.16, 12), tvMetalMat);
+            tvNeck.position.set(0, 0.54, 0.0);
+            tvGroup.add(tvNeck);
+
+            // TV Outer Frame / Bezel (16:9 Widescreen)
+            const screenW = 1.48;
+            const screenH = 0.84;
+            const tvFrame = new THREE.Mesh(new THREE.BoxGeometry(screenW + 0.08, screenH + 0.08, 0.06), tvMetalMat);
+            tvFrame.position.set(0, 1.02, 0.02);
+            tvFrame.castShadow = true;
+            tvFrame.userData.isTV = true;
+            tvGroup.add(tvFrame);
+            interactiveTV.push(tvFrame);
+
+            // Bottom Hinoki wood accent trim bar along TV lower bezel
+            const tvWoodTrim = new THREE.Mesh(new THREE.BoxGeometry(screenW + 0.08, 0.035, 0.068), naturalBeamMat);
+            tvWoodTrim.position.set(0, 1.02 - screenH / 2 - 0.02, 0.02);
+            tvGroup.add(tvWoodTrim);
+
+            // Dynamic Canvas Texture for TV Screen
+            tvCanvas = document.createElement('canvas');
+            tvCanvas.width = 512;
+            tvCanvas.height = 288;
+            tvCtx = tvCanvas.getContext('2d');
+
+            tvTexture = new THREE.CanvasTexture(tvCanvas);
+            tvTexture.minFilter = THREE.LinearFilter;
+            tvTexture.magFilter = THREE.LinearFilter;
+
+            tvScreenMat = new THREE.MeshStandardMaterial({
+                map: tvTexture,
+                roughness: 0.15,
+                metalness: 0.1,
+                emissive: 0xffffff,
+                emissiveMap: tvTexture,
+                emissiveIntensity: 0
+            });
+
+            const tvScreenMesh = new THREE.Mesh(new THREE.PlaneGeometry(screenW, screenH), tvScreenMat);
+            tvScreenMesh.position.set(0, 1.02, 0.052);
+            tvScreenMesh.userData.isTV = true;
+            tvGroup.add(tvScreenMesh);
+            interactiveTV.push(tvScreenMesh);
+
+            // Power Status LED Indicator on bottom-right bezel (Red = Standby, Green = ON)
+            tvLedMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+            const tvLed = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8), tvLedMat);
+            tvLed.position.set(screenW / 2 - 0.06, 1.02 - screenH / 2 - 0.02, 0.056);
+            tvGroup.add(tvLed);
+
+            // Initialize TV canvas in OFF state
+            updateTVScreen(0);
+
+            houseGroup.add(tvGroup);
+        }
+
+        // Render animated Japanese broadcast when TV is ON, or sleek dark glass when OFF
+        function updateTVScreen(t) {
+            if (!tvCtx || !tvTexture) return;
+            const w = tvCanvas.width;
+            const h = tvCanvas.height;
+
+            if (!state.tvOn) {
+                // Dark Standby Screen with subtle glass sheen
+                const offGrad = tvCtx.createLinearGradient(0, 0, w, h);
+                offGrad.addColorStop(0, '#090d14');
+                offGrad.addColorStop(0.5, '#111827');
+                offGrad.addColorStop(1, '#070a0f');
+                tvCtx.fillStyle = offGrad;
+                tvCtx.fillRect(0, 0, w, h);
+
+                // Subtle diagonal reflection streak
+                tvCtx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+                tvCtx.beginPath();
+                tvCtx.moveTo(w * 0.18, 0);
+                tvCtx.lineTo(w * 0.36, 0);
+                tvCtx.lineTo(w * 0.12, h);
+                tvCtx.lineTo(0, h);
+                tvCtx.closePath();
+                tvCtx.fill();
+
+                tvTexture.needsUpdate = true;
+                return;
+            }
+
+            // Animated Broadcast: Ukiyo-e Mount Fuji, Glowing Sun/Moon, Shimmering Lake & Falling Sakura
+            const skyGrad = tvCtx.createLinearGradient(0, 0, 0, h * 0.72);
+            skyGrad.addColorStop(0, '#1e1b4b');
+            skyGrad.addColorStop(0.45, '#7c2d12');
+            skyGrad.addColorStop(0.85, '#f97316');
+            skyGrad.addColorStop(1, '#fde047');
+            tvCtx.fillStyle = skyGrad;
+            tvCtx.fillRect(0, 0, w, h * 0.72);
+
+            // Rising Crimson Sun behind Mt. Fuji
+            const sunY = h * 0.42 + Math.sin(t * 0.8) * 8;
+            const sunGrad = tvCtx.createRadialGradient(w * 0.5, sunY, 10, w * 0.5, sunY, 72);
+            sunGrad.addColorStop(0, '#fef08a');
+            sunGrad.addColorStop(0.45, '#f97316');
+            sunGrad.addColorStop(1, 'rgba(249, 115, 22, 0)');
+            tvCtx.fillStyle = sunGrad;
+            tvCtx.beginPath();
+            tvCtx.arc(w * 0.5, sunY, 72, 0, Math.PI * 2);
+            tvCtx.fill();
+
+            // Drifting golden clouds
+            tvCtx.fillStyle = 'rgba(254, 215, 170, 0.22)';
+            for (let c = 0; c < 4; c++) {
+                const cx = ((c * 140 + t * 18 * (c % 2 === 0 ? 1 : -0.7)) % (w + 120)) - 60;
+                const cy = 42 + c * 24;
+                tvCtx.beginPath();
+                tvCtx.ellipse(cx, cy, 52, 10, 0, 0, Math.PI * 2);
+                tvCtx.fill();
+            }
+
+            // Iconic Mount Fuji Silhouette
+            tvCtx.fillStyle = '#1e293b';
+            tvCtx.beginPath();
+            tvCtx.moveTo(w * 0.08, h * 0.72);
+            tvCtx.quadraticCurveTo(w * 0.34, h * 0.62, w * 0.44, h * 0.27);
+            tvCtx.lineTo(w * 0.56, h * 0.27);
+            tvCtx.quadraticCurveTo(w * 0.66, h * 0.62, w * 0.92, h * 0.72);
+            tvCtx.closePath();
+            tvCtx.fill();
+
+            // Snow Cap on Mount Fuji
+            tvCtx.fillStyle = '#f8fafc';
+            tvCtx.beginPath();
+            tvCtx.moveTo(w * 0.44, h * 0.27);
+            tvCtx.lineTo(w * 0.56, h * 0.27);
+            tvCtx.lineTo(w * 0.60, h * 0.39);
+            tvCtx.lineTo(w * 0.54, h * 0.36);
+            tvCtx.lineTo(w * 0.50, h * 0.41);
+            tvCtx.lineTo(w * 0.46, h * 0.36);
+            tvCtx.lineTo(w * 0.40, h * 0.39);
+            tvCtx.closePath();
+            tvCtx.fill();
+
+            // Lake Kawaguchi Water Reflection at bottom
+            const lakeGrad = tvCtx.createLinearGradient(0, h * 0.72, 0, h);
+            lakeGrad.addColorStop(0, '#0f172a');
+            lakeGrad.addColorStop(0.4, '#1e3a8a');
+            lakeGrad.addColorStop(1, '#090d16');
+            tvCtx.fillStyle = lakeGrad;
+            tvCtx.fillRect(0, h * 0.72, w, h * 0.28);
+
+            // Animated shimmering water ripples on lake
+            tvCtx.fillStyle = 'rgba(253, 224, 71, 0.35)';
+            for (let r = 0; r < 10; r++) {
+                const ry = h * 0.75 + r * 7;
+                const rw = 65 - r * 4 + Math.sin(t * 4 + r) * 14;
+                const rx = w * 0.5 - rw / 2 + Math.cos(t * 3 + r) * 6;
+                tvCtx.fillRect(rx, ry, rw, 2.5);
+            }
+
+            // Animated Sakura Petals drifting across screen
+            tvCtx.fillStyle = '#fda4af';
+            for (let p = 0; p < 18; p++) {
+                const px = (p * 37 + t * (28 + (p % 5) * 6)) % w;
+                const py = (p * 23 + t * (18 + (p % 4) * 5)) % h;
+                tvCtx.save();
+                tvCtx.translate(px, py);
+                tvCtx.rotate(t * 2 + p);
+                tvCtx.beginPath();
+                tvCtx.ellipse(0, 0, 4.5, 2.5, 0, 0, Math.PI * 2);
+                tvCtx.fill();
+                tvCtx.restore();
+            }
+
+            // Channel HUD badge in top-right corner
+            tvCtx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+            tvCtx.fillRect(w - 118, 14, 102, 26);
+            tvCtx.fillStyle = '#fef08a';
+            tvCtx.font = 'bold 12px sans-serif';
+            tvCtx.fillText('● NHK 和 4K', w - 106, 31);
+
+            tvTexture.needsUpdate = true;
         }
 
         function createKawaraTiledRoof(houseGroup, darkCedarMat) {
@@ -1954,6 +2199,34 @@
             playSoftChime(state.doorsOpen ? 587.33 : 493.88);
         }
 
+        function toggleTV(forceState = null) {
+            state.tvOn = forceState !== null ? forceState : !state.tvOn;
+            const btnTV = document.getElementById('btn-tv');
+            const labelTV = document.getElementById('label-tv');
+
+            if (state.tvOn) {
+                btnTV.classList.add('active');
+                labelTV.textContent = 'TV On';
+                if (tvScreenMat) tvScreenMat.emissiveIntensity = 1.15;
+                if (tvLedMat) tvLedMat.color.setHex(0x4ade80); // Green LED when ON
+                if (tvLight) tvLight.intensity = 1.65;
+
+                // Automatically slide open Shoji doors if closed so user can see the TV inside
+                if (!state.doorsOpen) {
+                    toggleSlidingDoors();
+                }
+            } else {
+                btnTV.classList.remove('active');
+                labelTV.textContent = 'TV Off';
+                if (tvScreenMat) tvScreenMat.emissiveIntensity = 0;
+                if (tvLedMat) tvLedMat.color.setHex(0xef4444); // Red Standby LED when OFF
+                if (tvLight) tvLight.intensity = 0;
+            }
+
+            updateTVScreen(state.time);
+            playSoftChime(state.tvOn ? 783.99 : 392.0);
+        }
+
         function toggleCameraMode(forceMode = null) {
             state.cameraMode = forceMode !== null ? forceMode : (state.cameraMode === 'orbit' ? 'fp' : 'orbit');
 
@@ -2002,7 +2275,7 @@
             overview: { theta: 0.68, phi: 1.18, radius: 21.5, target: new THREE.Vector3(0, 2.2, 0.5) },
             pond:     { theta: 0.85, phi: 1.12, radius: 11.2, target: new THREE.Vector3(5.6, 0.7, 3.6) },
             engawa:   { theta: -0.45, phi: 1.38, radius: 8.8, target: new THREE.Vector3(-1.2, 1.9, 1.8) },
-            interior: { theta: 0.12, phi: 1.38, radius: 6.4, target: new THREE.Vector3(-1.8, 2.0, -2.5), openDoors: true },
+            interior: { theta: -0.18, phi: 1.36, radius: 6.6, target: new THREE.Vector3(-1.2, 1.85, -3.2), openDoors: true },
             bonsai:   { theta: -0.62, phi: 1.28, radius: 6.2, target: new THREE.Vector3(-5.8, 1.5, 4.8) }
         };
 
@@ -2144,6 +2417,7 @@
             document.getElementById('btn-time').addEventListener('click', toggleDayNight);
             document.getElementById('btn-lights').addEventListener('click', () => toggleGardenLights());
             document.getElementById('btn-doors').addEventListener('click', toggleSlidingDoors);
+            document.getElementById('btn-tv').addEventListener('click', () => toggleTV());
             document.getElementById('btn-camera-mode').addEventListener('click', () => toggleCameraMode());
             document.getElementById('btn-audio').addEventListener('click', toggleZenAudio);
 
@@ -2236,6 +2510,11 @@
                     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
                     raycaster.setFromCamera(mouse, camera);
 
+                    const tvHits = raycaster.intersectObjects(interactiveTV, true);
+                    if (tvHits.length > 0) {
+                        toggleTV();
+                        return;
+                    }
                     const doorHits = raycaster.intersectObjects(interactiveDoors, true);
                     if (doorHits.length > 0) {
                         toggleSlidingDoors();
@@ -2473,7 +2752,15 @@
                 }
             });
 
-            // 7. Update Camera (Orbit or First-Person)
+            // 7. Update Animated Television Screen & Dynamic Room Glow
+            if (state.tvOn) {
+                updateTVScreen(t);
+                if (tvLight) {
+                    tvLight.intensity = 1.55 + Math.sin(t * 7.5) * 0.12;
+                }
+            }
+
+            // 8. Update Camera (Orbit or First-Person)
             if (state.cameraMode === 'orbit') {
                 updateCameraOrbit(false);
             } else {
